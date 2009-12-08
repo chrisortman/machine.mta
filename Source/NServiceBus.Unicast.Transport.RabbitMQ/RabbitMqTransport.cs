@@ -89,6 +89,7 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
           }
           properties.Timestamp = DateTime.UtcNow.ToAmqpTimestamp();
           properties.ReplyTo = this.ListenAddress;
+        	properties.AppId = transportMessage.MessageIntent.ToString();
           properties.SetPersistent(transportMessage.Recoverable);
           var headers = _headersSerializer.Serialize(transportMessage.Headers);
           if (headers != null && headers.Length > 0)
@@ -318,6 +319,8 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
       m.IdForCorrelation = delivery.BasicProperties.MessageId;
       m.ReturnAddress = delivery.BasicProperties.ReplyTo;
       m.TimeSent = delivery.BasicProperties.Timestamp.ToDateTime();
+    	m.MessageIntent = (MessageIntentEnum) Enum.Parse(typeof (MessageIntentEnum), delivery.BasicProperties.AppId);
+
       if (delivery.BasicProperties.Headers != null && delivery.BasicProperties.Headers.Contains("NSB"))
       {
         var headers = (byte[])delivery.BasicProperties.Headers["NSB"];
