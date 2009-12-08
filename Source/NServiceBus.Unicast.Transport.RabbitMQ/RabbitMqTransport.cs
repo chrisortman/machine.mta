@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Transactions;
 using System.Linq;
-
+using System.Xml.Serialization;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -24,7 +24,7 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
     RabbitMqAddress _listenAddress;
     RabbitMqAddress _poisonAddress;
     IMessageSerializer _messageSerializer;
-    IHeadersSerializer _headersSerializer;
+    IHeadersSerializer _headersSerializer = new MyHeaderSerializer();
     Int32 _numberOfWorkerThreads;
     Int32 _maximumNumberOfRetries;
     IsolationLevel _isolationLevel;
@@ -167,7 +167,7 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
     public event EventHandler<TransportMessageReceivedEventArgs> TransportMessageReceived;
     public event EventHandler StartedMessageProcessing;
     public event EventHandler FinishedMessageProcessing;
-    public event EventHandler<ThreadExceptionEventArgs> FailedMessageProcessing;
+    public event EventHandler FailedMessageProcessing;
 
     public string ListenAddress
     {
@@ -189,7 +189,16 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
 
     public IHeadersSerializer HeadersSerializer
     {
-      get { return _headersSerializer; }
+      get
+      {
+				if(_headersSerializer == null)
+				{
+					_headersSerializer = new MyHeaderSerializer();
+				}
+
+      	return _headersSerializer;
+      }
+
       set { _headersSerializer = value; }
     }
 
@@ -262,6 +271,7 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
       using (var connection = _connectionProvider.Open(this.ProtocolName, _listenAddress.Broker, true))
       {
         var channel = connection.Model();
+				
         var consumer = new QueueingBasicConsumer(channel);
         channel.BasicConsume(_listenAddress.RoutingKey, false, null, consumer);
         var delivery = consumer.Receive(_receiveTimeout);
@@ -469,7 +479,45 @@ namespace NServiceBus.Unicast.Transport.RabbitMQ
     }
   }
 
-  public static class ConsumerHelpers
+	public interface IHeadersSerializer
+	{
+		byte[] Serialize(IList<HeaderInfo> headers);
+		HeaderInfo[] Deserialize(byte[] headers);
+	}
+
+	public class MyHeaderSerializer : IHeadersSerializer
+	{
+		private readonly XmlSerializer serializer = new XmlSerializer(typeof(List<HeaderInfo>));
+
+		public byte[] Serialize(IList<HeaderInfo> headers)
+		{
+			  if ((headers != null) && (headers.Count<HeaderInfo>() > 0))
+        {
+            using (MemoryStream stream = new MemoryStream())
+            {
+                this.serializer.Serialize((Stream) stream, headers.ToList<HeaderInfo>());
+                return stream.ToArray();
+            }
+        }
+        return null;
+
+		}
+
+		public HeaderInfo[] Deserialize(byte[] buffer)
+		{
+			using (MemoryStream stream = new MemoryStream(buffer))
+        {
+            List<HeaderInfo> headers = this.serializer.Deserialize(stream) as List<HeaderInfo>;
+            if (headers == null)
+            {
+                return new HeaderInfo[0];
+            }
+            return headers.ToArray();
+        }
+
+		}
+	}
+	public static class ConsumerHelpers
   {
     static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, 0);
 
